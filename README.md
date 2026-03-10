@@ -23,14 +23,15 @@ The repository contains 5 Python files:
 
 ## Requirements
 
-The analysis was performed using Python 3.13
+The analysis was performed using Python Version=3.13.5
 
 Required packages include:
-- pandas
-- numpy
-- scikit-learn
-- matplotlib
-- seaborn
+- pandas (Version=2.3.2)
+- numpy (Version=2.2.6)
+- scikit-learn (Version=1.7.1)
+- matplotlib (Version=3.10.5)
+- seaborn (Version=0.13.2)
+- shap (Version=0.48.0)
 
 ## Contributing
 

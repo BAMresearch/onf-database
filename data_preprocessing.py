@@ -65,28 +65,7 @@ def preprocessing(data_file):
     # ---- find data point which have a permeance and a mwco reported
     both_given = new.dropna(subset=["filtrationResults.mwco", "filtrationResults.solventPermeance"])
 
-    # Find all membranes/filtration experiments in the interesting region
-    interesting_experiments = pd.DataFrame(data=None)
-
-    for index, filtration_experiment in both_given.iterrows():
-        if filtration_experiment["filtrationResults.mwco"] < 590 and filtration_experiment["filtrationResults.mwco"] > 116 and filtration_experiment["filtrationResults.solventPermeance"] > 1:
-            interesting_experiments = pd.concat([interesting_experiments, filtration_experiment], axis=1)
-
-    interesting_experiments = interesting_experiments.T
-    not_used_columns = interesting_experiments.isna().sum()
-
-    # find rows not filled at all
-    name_empty_columns = []
-    for index, value in not_used_columns.items():
-        if value == len(interesting_experiments):
-            name_empty_columns.append(index)
-
-    # ---- drop empty rows and membrane duplicates and get final variables
-    experiments = interesting_experiments.drop(name_empty_columns, axis=1) # could include different solvents for one membrane
-    membranes = experiments.drop_duplicates(subset="name")
-    unique_filtrations = experiments.drop_duplicates(subset=["name", "testConditions.solvent1",
-                                                             "testConditions.solvent2", "testConditions.filtrationMode"])
-    return srnf, perm_given, mwco_given, both_given, experiments, membranes, unique_filtrations
+    return srnf, perm_given, mwco_given, both_given
 
 # Convert Solvent name to Viscosity
 solvent_visco = {'1,4-dioxane': 1.177, # https://14d-1.itrcweb.org/appendix-b/
@@ -137,6 +116,6 @@ feature_list = ["testConditions.filtrationMode", "testConditions.solvent1", "tes
                 "characterizationResults.contactAngle", "characterizationResults.totalThickness"]
 
 if __name__ == "__main__":
-    srnf, perm_given, mwco_given, both_given, experiments, membranes, unique_filtrations = preprocessing("OMD_SRNF_2025-04-08.csv")
+    srnf, perm_given, mwco_given, both_given = preprocessing("OMD_SRNF_2025-04-08.csv")
 
 # %%

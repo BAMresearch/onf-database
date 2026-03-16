@@ -6,6 +6,8 @@ Created on Wed May 28 11:09:47 2025
 """
 #%%
 import warnings
+import random
+import os
 import pandas as pd
 from matplotlib import pyplot as plt
 import numpy as np
@@ -13,42 +15,28 @@ import shap
 import re
 import textwrap
 
-# import tensorflow as tf
-
-# from keras.models import Sequential
-# from keras.layers import Dense
-# from keras.regularizers import l2
-
 from sklearn.preprocessing import StandardScaler, RobustScaler, TargetEncoder
-from sklearn.model_selection import train_test_split, cross_val_score, KFold
+from sklearn.model_selection import train_test_split, KFold
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.linear_model import LinearRegression, ElasticNet
 from sklearn.ensemble import RandomForestRegressor
 import sklearn.ensemble as se
-from sklearn.metrics import mean_absolute_error, get_scorer, get_scorer_names
+from sklearn.metrics import mean_absolute_error, get_scorer
 from sklearn.decomposition import PCA
 from sklearn.inspection import permutation_importance
 from sklearn.metrics.pairwise import cosine_similarity
-
-from sklearn.metrics import r2_score
-
-# from xgboost import XGBRegressor
 
 # Own Code Files
 from data_preprocessing import preprocessing, solvent_visco
 
 warnings.filterwarnings("ignore")
 
-np.random.seed(42)
-
 # Importing the data
 ONF_Database = "OMD_SRNF_2025-04-08.csv"
 
-###################################################
 # %% Preprocessing of data
-
 # ---- use Data_Preprocessing file to import several DataFrames
-srnf, perm_given, mwco_given, both_given, experiments, membranes, unique_filtrations = preprocessing("OMD_SRNF_2025-04-08.csv")
+srnf, perm_given, mwco_given, both_given = preprocessing("OMD_SRNF_2025-04-08.csv")
 
 # %% Target/Label selection and Feature engineering
 # ---- define Features
@@ -76,19 +64,15 @@ features = features.drop(["testConditions.solvent1"], axis=1)
 # Using numbers such as Layer thickness as float by preplacing missing values (nan) with the median of all existing values or with 0
 features = features.astype({"isaSupportLayer.castingThickness":"float", # "testConditions.hydraulicP":"float"
                             })
-# median = features["isaSupportLayer.castingThickness"].median()
-# median_roughness = features["characterizationResults.roughness"].median()
+
 median_CA = features["characterizationResults.contactAngle"].median()
-# median_total_thickness = features["characterizationResults.totalThickness"].median()
 median_T = features["testConditions.temperature"].median()
 features.fillna({"isaSupportLayer.castingThickness":0, "soluteChoice.solute1.concentration":0, "characterizationResults.topLayerThickness":0},
                 inplace=True) # if median should be used replace 0 with median
 
-features.fillna({# "characterizationResults.roughness":median_roughness,
-                 "characterizationResults.contactAngle":median_CA,
-                 #"characterizationResults.totalThickness": median_total_thickness,
-                 "testConditions.temperature": median_T
-                 }, inplace=True)
+features.fillna({"characterizationResults.contactAngle":median_CA,
+                "testConditions.temperature": median_T
+                }, inplace=True)
                  
 X = features
 
@@ -101,22 +85,18 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_
 
 # ---- Target-Encoding
 # divide into numerical and categorical values; done separately for training and test set
-categorical_cols = ["testConditions.filtrationMode", # "soluteChoice.solute1.category",
+categorical_cols = ["testConditions.filtrationMode",
                     "structure", "chemistry", "chemistryOther",
-                    # "family",
                     "supportLayerChemistry", "supportLayerType", "supportLayer.postTreatment",
-                    "postTreatment", 
-                    # "isaSupportLayer.solvent", 
+                    "postTreatment",
                     "topLayerDepositionMethod",
                     "tfnData.nanomaterialName",
                     "testConditions.temperature"]
 
-numerical_cols = [# "testConditions.hydraulicP",
-                  "soluteChoice.solute1.concentration",
-                  "isaSupportLayer.castingThickness", 
-                  "characterizationResults.topLayerThickness", # "characterizationResults.roughness",
-                  "characterizationResults.contactAngle", 
-                  # "characterizationResults.totalThickness",
+numerical_cols = ["soluteChoice.solute1.concentration",
+                  "isaSupportLayer.castingThickness",
+                  "characterizationResults.topLayerThickness",
+                  "characterizationResults.contactAngle",
                   "solvent1.viscosity"]
 
 X_train_categorical = X_train[categorical_cols]
@@ -177,8 +157,7 @@ print("R2 train: ", round(train_R2, 2), " & R2 test: ", round(test_R2, 2), "& MA
 
 # %%% Elastic net
 print("\n Elastic Net:")
-elan = ElasticNet(alpha=0.2, l1_ratio=0.05) #optimized
-
+elan = ElasticNet(alpha=0.2, l1_ratio=0.05)
 elan.fit(X_train_scaled, y_train)
 y_pred = elan.predict(X_test_scaled)
 
@@ -193,9 +172,8 @@ print("R2 train: ", round(train_R2, 2), " & R2 test: ", round(test_R2, 2) , "& M
 coefficients = pd.DataFrame(elan.coef_, X.columns.values)
 
 # %%% kNN with PCA beforehead
-print("\n PCA + kNN:") # optimized
-
-pca = PCA(12) 
+print("\n PCA + kNN:") 
+pca = PCA(12)
 
 X_train_pca = pca.fit_transform(X_train_scaled)
 X_test_pca = pca.transform(X_test_scaled)
@@ -215,7 +193,7 @@ print("R2 train: ", round(train_R2, 2), " & R2 test: ", round(test_R2, 2), "& MA
 # %%% Random Forest
 print("\n Random Forest: ")
 
-random_forest = RandomForestRegressor(n_estimators=25, max_depth=13, random_state=42) # optimized
+random_forest = RandomForestRegressor(n_estimators=25, max_depth=13, random_state=42)
 random_forest.fit(X_train_scaled, y_train)
 y_pred = random_forest.predict(X_test_scaled)
 
@@ -227,7 +205,7 @@ mae = mean_absolute_error(scaler.inverse_transform(np.array(y_test).reshape(1, -
 print("R2 train: ", round(train_R2, 2), " & R2 test: ", round(test_R2, 2), "& MAE:",  round(mae, 1))
 
 # %%% Gradient Boosting
-print("\n Gradient Boosting: ") # optimized
+print("\n Gradient Boosting: ")
 gradient_boost = se.GradientBoostingRegressor(n_estimators=100, max_depth=6,min_samples_leaf=5, learning_rate=0.1, random_state=42) 
 gradient_boost.fit(X_train_scaled, y_train)
 y_pred = gradient_boost.predict(X_test_scaled)
@@ -240,7 +218,7 @@ mae = mean_absolute_error(scaler.inverse_transform(np.array(y_test).reshape(1, -
 print("R2 train: ", round(train_R2, 2), " & R2 test: ", round(test_R2, 2), "& MAE:",  round(mae, 1))
 
 # %%% Extra Tree
-print("\n Extra Tree: ") #optimized
+print("\n Extra Tree: ")
 extra_tree = se.ExtraTreesRegressor(n_estimators=225, max_depth=13, max_features = 0.7, min_samples_leaf= 2, random_state=42, n_jobs=-1)
 extra_tree.fit(X_train_scaled, y_train)
 y_pred = extra_tree.predict(X_test_scaled)
@@ -263,28 +241,18 @@ m2 = ["Dead-end", 2000, "[\"TFC\"]", "[\"Polydimethylsiloxane\"]",
       0.0, "Dipcoating", None, 
       86.5, 101, 20, 0.543] # Puramem Flux, measured MWCO = 766 Da
 
-# m3 = ["Dead-end", 2000, "[\"TFC\"]", "[\"Polymers of intrinsic microporosity\"]", 
-#       None, "[\"Polyacrylonitrile\"]", "ISA", "[\"None\"]","[\"Crosslinking\",\"Drying\"]", 
-#       0.0, "Dipcoating", None, 
-#       86.5, 79, 20, 0.543] # PIM A high Flux, measured MWCO = ???
-
 m3 = ["Dead-end", 2000, "[\"TFC\"]", "[\"Polymers of intrinsic microporosity\"]", 
       None, "[\"Polyacrylonitrile\"]", "ISA", "[\"None\"]","[\"Crosslinking\",\"Drying\"]", 
       0.0, "Dipcoating", None, 
-      90, 75, 20, 0.543] # PIM B low flux, measured MWCO = 680 LMH/bar
+      90, 75, 20, 0.543] # PIM B low flux, measured MWCO = 680 Da
 
 m4 = ["Dead-end", 2000, "[\"TFC\"]", "[\"Polyamine\"]",  
     None, "[\"Polyetherimide\"]", "ISA", "[\"None\"]","[\"Crosslinking\",\"Drying\"]",
     0.0,  "Dipcoating", None, 
-    1900, 52, 20, 0.543] # PEBAX, measured Perm = 0.75 LMH/bar
+    1900, 52, 20, 0.543] # PEBAX, measured MWCO > 1000 Da
 
 mem_names = ["Hereon \nPDMS", "Puramem", "Hereon \nPIM", "Hereon \nPEBAX"]
 m_true = [563, 766, 680, 990] # measured MWCO using 90% Retention
-
-# ['testConditions.filtrationMode', 'soluteChoice.solute1.concentration', 'structure', 'chemistry',
-#      'chemistryOther', 'supportLayerChemistry', 'supportLayerType', 'supportLayer.postTreatment', 'postTreatment',
-#      'isaSupportLayer.castingThickness', 'topLayerDepositionMethod', 'tfnData.nanomaterialName', 
-#      'characterizationResults.topLayerThickness','characterizationResults.contactAngle', 'testConditions.temperature','solvent1.viscosity']
 
 hereon_1 = pd.DataFrame([m1, m2, m3 ,m4], columns=X_test.columns, index=mem_names)
 hereon_cat = hereon_1[categorical_cols]
@@ -321,12 +289,8 @@ cos_sim = cosine_similarity(np.array(mean_vec_test).reshape(1, -1), np.array(mea
 differences.loc["Test data set"] = [avg_dist, cos_sim]
 print(differences.astype(float).round(2))
 
-#%%
 # %% XAI & feature analysis
-
 # ---- shap plot # auskommentiert für Schnelligkeit
-import random
-import os
 random.seed(42)
 os.environ["PYTHONHASHSEED"] = "42"
 np.random.seed(42)
@@ -351,15 +315,9 @@ def category_plot(X, shap_values, category_name:str):
     shap_values_df = pd.DataFrame(shap_values, columns=X.columns)
     X_with_cats = X.copy()
     X_with_cats["shap_category"] = X_with_cats[category_name]
-        
-    # all_categories = X_with_cats["shap_category"].unique()
     
     # mean of SHAP values per category
     shap_cat_importance = shap_values_df.groupby(X_with_cats["shap_category"]).mean()
-    
-    # shap_cat_importance = (shap_values_df.groupby(X_with_cats["shap_category"]).mean()
-    #                     .reindex(all_categories, fill_value=0))   # Kategorien mit SHAP=0 erzwingen
-
     print(shap_cat_importance[category_name].sort_values())
     colors = ['#1f77b4' if e >= 0 else '#ff0051' for e in shap_cat_importance[category_name].sort_values()]
     
@@ -385,14 +343,16 @@ category_plot(X_train, shap_values, "postTreatment")
 # ---- supportLayer.post treatment 
 category_plot(X_train, shap_values, "supportLayer.postTreatment")
 # %%% Tree Explainer
-
 importances_rf = extra_tree.feature_importances_
 indices = np.argsort(importances_rf)[::-1]
 
+labels = ['\n'.join(textwrap.fill(part.strip(), 25) for part in re.split(r'\.\s*', label, maxsplit=1) if part)
+    for label in X_train_scaled.columns]
 plt.figure(figsize=(10, 6))
-plt.title("Extra Trees")
 plt.bar(range(len(importances_rf)), importances_rf[indices], align="center")
-plt.xticks(range(len(importances_rf)), [X_train_scaled.columns[i] for i in indices], rotation=45, ha='right')
+plt.xticks(range(len(importances_rf)), [labels[i] for i in indices],
+           rotation=90, ha='right')
+plt.ylabel("Feature importance")
 plt.tight_layout()
 plt.show()
 
@@ -420,22 +380,7 @@ ax.set_xticklabels(labels, rotation=90)
 ax.set_ylabel("Decrease in R2 score")
 ax.figure.tight_layout()
 
-# %% Checking Correlations
-# X_train_encoded_cat = pd.DataFrame(X_train_encoded_cat, columns = X_train_categorical.columns)
-
-# plt.scatter(X_train_categorical["testConditions.filtrationMode"], X_train_encoded_cat["testConditions.filtrationMode"])
-# plt.show()
-
-# # plt.scatter(X_train_categorical["soluteChoice.solute1.category"].astype(str), X_train_encoded_cat["soluteChoice.solute1.category"])
-# # plt.show()
-
-# plt.scatter(X_train_categorical["structure"].astype(str), X_train_encoded_cat["structure"])
-# plt.show()
-
 # %% CrossValidation
-
-# ---- Initiales Setup
-
 # k-fold split and training
 y_true_all = []
 y_pred_all = []
@@ -496,8 +441,8 @@ for i in range(len(mem_names)):
     plt.text(m_true[i], m_pred_t[i], mem_names[i],
             fontsize=9, horizontalalignment='left', verticalalignment = "bottom",
             bbox=dict(alpha=0.4, facecolor="white", edgecolor="white", boxstyle='round,pad=-1'))
-plt.xlabel("Measured MWCO")
-plt.ylabel("Predicted MWCO")
+plt.xlabel("Measured MWCO [Da]")
+plt.ylabel("Predicted MWCO [Da]")
 plt.title("10-fold Cross-Validation: Prediction vs. Truth")
 plt.legend()
 # plt.grid(True)
@@ -505,7 +450,6 @@ plt.tight_layout()
 plt.show()
 
 # %% Residual-Analysis incl. plot
-
 residuals = list(map(lambda true, pred: true - pred, y_true_all, y_pred_all))
 mae = mean_absolute_error(y_true_all, y_pred_all)
 std = np.std(residuals)
@@ -517,11 +461,9 @@ plt.axhline(mae, color='grey', linestyle='--', label = "Mean absolute error (tru
 plt.axhline(-mae, color='grey', linestyle='--')
 plt.axhline(std, color='lightgrey', linestyle='--', label = "Standard deviation residuals")
 plt.axhline(-std, color='lightgrey', linestyle='--')
-plt.xlabel("Predicted values")
-plt.ylabel("Residues (y_true - y_pred)")
-plt.title("Residual Analysis")
+plt.xlabel("Predicted values [Da]")
+plt.ylabel("Residues [Da]")
 plt.legend()
-# plt.grid(True)
 plt.ylim(-max(y_true_all)[0], max(y_true_all)[0])
 plt.tight_layout()
 plt.show()

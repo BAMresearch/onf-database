@@ -5,22 +5,24 @@ Created on Fri Jul 11 09:48:55 2025
 @author: Glass
 """
 
-#%%
+#%% 
+# import libraries
+import random
+import os
 import warnings
 import textwrap
 import re
-# import time
 import pandas as pd
 from matplotlib import pyplot as plt
 import numpy as np
 import shap
+import sklearn.ensemble as se
 
 from sklearn.preprocessing import StandardScaler, RobustScaler, TargetEncoder
 from sklearn.model_selection import train_test_split,  KFold
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.linear_model import LinearRegression, ElasticNet
 from sklearn.ensemble import RandomForestRegressor
-import sklearn.ensemble as se
 from sklearn.metrics import mean_absolute_error, get_scorer
 from sklearn.decomposition import PCA
 from sklearn.inspection import permutation_importance
@@ -30,16 +32,14 @@ from sklearn.metrics.pairwise import cosine_similarity
 from data_preprocessing import preprocessing, solvent_visco, feature_list
 
 warnings.filterwarnings("ignore")
-np.random.seed(42)
 
 # Importing the data
 ONF_Database = "OMD_SRNF_2025-04-08.csv"
 
-###################################################
 # %% Preprocessing of data
 
 # ---- use Data_Preprocessing file to import several DataFrames
-srnf, perm_given, mwco_given, both_given, experiments, membranes, unique_filtrations = preprocessing("OMD_SRNF_2025-04-08.csv")
+srnf, perm_given, mwco_given, both_given = preprocessing("OMD_SRNF_2025-04-08.csv")
 
 # %% Target/Label selection and Feature engineering
 # ---- define Features
@@ -56,7 +56,7 @@ features = features.drop(["testConditions.solvent1"], axis=1)
 median_CA = features["characterizationResults.contactAngle"].median()
 median_total_thickness = features["characterizationResults.totalThickness"].median()
 median_T = features["testConditions.temperature"].median()
-features.fillna({"soluteChoice.solute1.concentration":0, 
+features.fillna({"soluteChoice.solute1.concentration":0,
                  }, inplace=True) # if median should be used replace 0 with median
 
 features.fillna({"characterizationResults.contactAngle":median_CA,
@@ -131,7 +131,7 @@ plt.xticks(ticks=range(len(X_train_new.columns)), labels=X_train_new.columns, ro
 plt.yticks(ticks=range(len(X_train_new.columns)), labels=X_train_new.columns)
 plt.show()
 
-# %% Training models
+# %% Training models (Hyperparameter already optimized)
 # %%% Linear Regression
 print("\n Linear Regression:")
 linear = LinearRegression()
@@ -160,56 +160,8 @@ mae =  mean_absolute_error(np.expm1(y_test), np.expm1(y_pred))
 
 print("R2 train: ", round(train_R2, 2), " & R2 test: ", round(test_R2, 2), "& MAE:",  round(mae, 1))
 
-# coefficients = pd.DataFrame(elan.coef_, X.columns.values)
-
-# # %%%% Hyperparameter tuning
-
-# neighbors = list(range(1, 16, 1))
-# n_components = list(range(1,len(X.columns),1))
-# scores, n_list, c_list = [], [], []
-
-# # ---- evaluate model
-
-# counter = 0
-# start = time.time()
-
-# for c in n_components:
-#     counter += 1
-#     pca = PCA(n_components=c)
-#     X_train_pca = pca.fit_transform(X_train_scaled)
-#     X_test_pca = pca.transform(X_test_scaled)
-#     for n in neighbors:
-#         knn = KNeighborsRegressor(n_neighbors=n, metric = "nan_euclidean")
-#         score = cross_val_score(knn, X_train_pca, y_train, cv=10)
-#         scores.append(np.mean(score))
-#         n_list.append(n)
-#         c_list.append(c)
-#     print(counter)
-#     now = time.time()
-#     run_time = np.round((now -start)/60, 2)
-#     print(run_time)
-
-# end = time.time()
-# total_run_time = np.round((end-start)/60, 2)
-
-# best_k = n_list[np.argmax(scores)]
-# best_c = c_list[np.argmax(scores)]
-
-# # %% Plot k vs scores
-# ax = plt.figure().add_subplot(projection='3d')
-
-# ax.scatter(n_list, c_list, scores, c=scores)
-# ax.set_xlabel('Neighbors')
-# ax.set_ylabel('Components')
-# ax.set_zlabel('CV R2')
-# plt.show()
-
-# print("Selected k:", best_k)
-# print("Selected c:", best_c)
-
-
 # %%% kNN with PCA beforehead
-print("\n PCA + kNN:") # optimized
+print("\n PCA + kNN:") 
 
 pca = PCA(11)
 
@@ -228,7 +180,7 @@ mae =  mean_absolute_error(np.expm1(y_test), np.expm1(y_pred))
 print("R2 train: ", round(train_R2, 2), " & R2 test: ", round(test_R2, 2), "& MAE:",  round(mae, 1))
 
 # %%% Random Forest
-print("\n Random Forest: ") # optimized
+print("\n Random Forest: ") 
 
 random_forest = RandomForestRegressor(n_estimators=225, max_depth=12, random_state=42)
 random_forest.fit(X_train_scaled, y_train)
@@ -249,6 +201,7 @@ plt.figure(figsize=(10, 6))
 plt.title("Random Forest")
 plt.bar(range(len(importances_rf)), importances_rf[indices], align="center")
 plt.xticks(range(len(importances_rf)), [X_train_scaled.columns[i] for i in indices], rotation=45, ha='right')
+plt.ylabel("Feature importance")
 plt.tight_layout()
 plt.show()
 
@@ -275,7 +228,7 @@ m1 = ["Dead-end", 4, 2000,  20, "[\"TFC\"]",
 m2 = ["Dead-end", 4, 2000, 20, "[\"TFC\"]",
     "[\"Polydimethylsiloxane\"]", None, "[\"Polyacrylonitrile\"]", "Commercial", "[\"None\"]",
     "[\"Crosslinking\"]","[]", None, 101,
-    35.7,  0.543] # Puramem Flux, measured Perm = 0.685 LMH/bar
+    35.7,  0.543] # Puramem Flux, measured Perm = 0.47 LMH/bar
 
 m3 = ["Dead-end", 4, 2000, 20, "[\"TFC\"]",
     "[\"Polymers of intrinsic microporosity\"]", None, "[\"Polyacrylonitrile\"]", "ISA", "[\"None\"]",
@@ -285,20 +238,15 @@ m3 = ["Dead-end", 4, 2000, 20, "[\"TFC\"]",
 m4 = ["Dead-end", 4, 2000, 20, "[\"TFC\"]",
     "[\"Polymers of intrinsic microporosity\"]", None, "[\"Polyacrylonitrile\"]", "ISA", "[\"None\"]",
     "[\"Crosslinking\",\"Drying\"]","[Dimethylformamide (DMF)]", "Dipcoating", 79,
-    50.5, 0.543] # PIM B 1% crosslinked, measured Perm = 0.475 LMH/bar
+    50.5, 0.543] # PIM B 1% crosslinked, measured Perm = 0.51 LMH/bar
 
 m5 = ["Dead-end", 4, 2000, 20, "[\"TFC\"]",
     "[\"Polyamine\"]", None, "[\"Polyetherimide\"]", "ISA", "[\"None\"]",
     "[\"Crosslinking\",\"Drying\"]","[Dimethylformamide (DMF)]", "Dipcoating", 79,
     20, 0.543] # PEBAX, measured Perm = 0.75 LMH/bar
 
-# ['testConditions.filtrationMode', 'testConditions.hydraulicP','soluteChoice.solute1.concentration','testConditions.Temperature' ,  'structure', 
-# 'chemistry','supportLayerChemistry', 'supportLayerChemistry', 'supportLayerType', 'supportLayer.postTreatment', 
-# 'postTreatment', 'isaSupportLayer.solvent', 'topLayerDepositionMethod', 'characterizationResults.contactAngle',
-# 'characterizationResults.totalThickness', 'solvent1.viscosity']
-
 mem_names = ["Hereon PDMS", "Puramem", "Hereon PIM", "Hereon PEBAX"]
-m_true = [0.07, 0.47, 0.625, 0.75] 
+m_true = [0.07, 0.47, 0.51, 0.75]
 
 hereon_1 = pd.DataFrame([m1, m2, m4, m5], columns=X_test.columns, index=mem_names)
 hereon_cat = hereon_1[categorical_cols]
@@ -349,23 +297,25 @@ mae =  mean_absolute_error(np.expm1(y_test), np.expm1(y_pred))
 print("R2 train: ", round(train_R2, 2), " & R2 test: ", round(test_R2, 2), "& MAE:",  round(mae, 1))
 
 # %%%% Tree Explainer
+# Feature Importance
 importances_rf = gradient_boost.feature_importances_
 indices = np.argsort(importances_rf)[::-1]
 
+X_train_scaled = pd.DataFrame(X_train_scaled, index=X_train_new.index, columns = X_train_new.columns)
+
+labels = ['\n'.join(textwrap.fill(part.strip(), 25) for part in re.split(r'\.\s*', label, maxsplit=1) if part)
+    for label in X_train_scaled.columns]
 plt.figure(figsize=(10, 6))
 plt.title("Gradient Boosting")
 plt.bar(range(len(importances_rf)), importances_rf[indices], align="center")
-plt.xticks(range(len(importances_rf)), [X_train_scaled.columns[i] for i in indices],
-           rotation=45, ha='right')
+plt.xticks(range(len(importances_rf)), [labels[i] for i in indices],
+           rotation=90, ha='right')
+plt.ylabel("Feature importance")
 plt.tight_layout()
 plt.show()
 
-# # %% XAI & feature analysis
-
-# # ---- shap plot # auskommentiert für Schnelligkeit
-# X_train_scaled = pd.DataFrame(X_train_scaled)
-import random
-import os
+# %% XAI & feature analysis
+# ---- shap plot 
 random.seed(42)
 os.environ["PYTHONHASHSEED"] = "42"
 np.random.seed(42)
@@ -379,8 +329,6 @@ shap_values_2d = shap_values[:, :]
 X_train_scaled = pd.DataFrame(X_train_scaled, index=X_train_new.index, columns = X_train_new.columns)
 
 # %%
-labels = ['\n'.join(textwrap.fill(part.strip(), 25) for part in re.split(r'\.\s*', label, maxsplit=1) if part)
-    for label in X_train_scaled.columns]
 shap.summary_plot(shap_values_2d,X_train_scaled, feature_names=labels)
 plt.show()
 
@@ -444,7 +392,7 @@ permutation_results["feature"] = X_train.columns
 # %% 
 sorted_importances_idx = permutation_results.importances_mean.argsort()
 importances = pd.DataFrame(np.flip(permutation_results.importances[sorted_importances_idx]).T,
-                           columns=np.flip(X.columns[sorted_importances_idx]))
+                           columns=np.flip(X_train_scaled.columns[sorted_importances_idx]))
 
 ax = importances.plot.box(vert=True, whis=10)
 # ax.set_title("Permutation Importances (test set)")
@@ -454,18 +402,6 @@ labels = ['\n'.join(textwrap.fill(part.strip(), 25) for part in re.split(r'\.\s*
 ax.set_xticklabels(labels, rotation=90)
 ax.set_ylabel("Decrease in R2 score")
 ax.figure.tight_layout()
-
-# %% Checking Correlations
-# X_train_encoded_cat = pd.DataFrame(X_train_encoded_cat, columns = X_train_categorical.columns)
-
-# plt.scatter(X_train_categorical["testConditions.filtrationMode"], X_train_encoded_cat["testConditions.filtrationMode"])
-# plt.show()
-
-# # plt.scatter(X_train_categorical["soluteChoice.solute1.category"].astype(str), X_train_encoded_cat["soluteChoice.solute1.category"])
-# # plt.show()
-
-# plt.scatter(X_train_categorical["structure"].astype(str), X_train_encoded_cat["structure"])
-# plt.show()
 
 # %% CrossValidation
 # k-fold split and training
@@ -479,18 +415,18 @@ for train_idx, test_idx in kf.split(X):
     X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
     y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
 
-    # Spalten trennen
+    # Divide columns
     X_train_cat = X_train[categorical_cols]
     X_train_num = X_train[numerical_cols]
     X_test_cat = X_test[categorical_cols]
     X_test_num = X_test[numerical_cols]
 
-    # Target-Encoding (foldweise codieren)
+    # Target-Encoding 
     encoder = TargetEncoder()
     X_train_cat_enc = encoder.fit_transform(X_train_cat, y_train)
     X_test_cat_enc = encoder.transform(X_test_cat)
 
-    # Zusammenfügen
+    # combine categorical and numerical columns
     X_train_new = pd.concat([pd.DataFrame(X_train_cat_enc,
                                           index=X_train.index, columns=X_train_categorical.columns), X_train_num],
                             axis=1)
@@ -498,7 +434,7 @@ for train_idx, test_idx in kf.split(X):
                                           index=X_test.index, columns=X_test_categorical.columns), X_test_num],
                            axis=1)
 
-    # Skalieren
+    # scale
     scaler = RobustScaler()
     X_train_scaled = scaler.fit_transform(X_train_new)
     X_test_scaled = scaler.transform(X_test_new)
@@ -526,11 +462,11 @@ plt.scatter(y_true_all, y_pred_all, alpha=0.3)
 plt.plot([min(y_true_all), max(y_true_all)],
          [min(y_true_all), max(y_true_all)],
          color='red', linestyle='--', label='Ideal')
-# for i in range(len(mem_names)):
-#     plt.text(m_true[i], m_pred_t[i], mem_names[i], color="black",
-#             fontsize=9, horizontalalignment='right',
-#             bbox=dict(alpha=0.4, facecolor="white", edgecolor="white", boxstyle='round,pad=-1'))
-# plt.scatter(m_true, m_pred_t, color="red", alpha=0.6)
+for i in range(len(mem_names)):
+    plt.text(m_true[i], m_pred_t[i], mem_names[i], color="black",
+            fontsize=9, horizontalalignment='right',
+            bbox=dict(alpha=0.4, facecolor="white", edgecolor="white", boxstyle='round,pad=-1'))
+plt.scatter(m_true, m_pred_t, color="red", alpha=0.6)
 plt.xlabel("Measured Permeance [LHM/bar]")
 plt.ylabel("Predicted Permeance [LHM/bar]")
 plt.xscale("log")
@@ -552,9 +488,8 @@ plt.axhline(mae, color='grey', linestyle='--', label = "Mean absolute error (tru
 plt.axhline(-mae, color='grey', linestyle='--')
 plt.axhline(std, color='lightgrey', linestyle='--', label = "Standard deviation residuals")
 plt.axhline(-std, color='lightgrey', linestyle='--')
-plt.xlabel("Predicted values")
-plt.ylabel("Residues (y_true - y_pred)")
-plt.title("Residual Analysis")
+plt.xlabel("Predicted values [LMH/bar]")
+plt.ylabel("Residues [LMH/bar]")
 plt.legend()
 plt.ylim(-max(y), max(y))
 plt.tight_layout()

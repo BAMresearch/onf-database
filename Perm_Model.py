@@ -19,18 +19,20 @@ import shap
 import sklearn.ensemble as se
 
 from sklearn.preprocessing import StandardScaler, RobustScaler, TargetEncoder
-from sklearn.model_selection import train_test_split,  KFold
+from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.linear_model import LinearRegression, ElasticNet
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_absolute_error, get_scorer
+from sklearn.metrics import mean_absolute_error, get_scorer, root_mean_squared_error
 from sklearn.decomposition import PCA
 from sklearn.inspection import permutation_importance
-from sklearn.metrics.pairwise import cosine_similarity
 
 # Own Code Files
 from data_preprocessing import preprocessing, solvent_visco, feature_list
 
+random.seed(42)
+os.environ["PYTHONHASHSEED"] = "42"
+np.random.seed(42)
 warnings.filterwarnings("ignore")
 
 # Importing the data
@@ -64,7 +66,6 @@ features.fillna({"characterizationResults.contactAngle":median_CA,
                  "testConditions.temperature": median_T
                  }, inplace=True)
 
-# X = pd.get_dummies(features) # One-Hot-Encoding
 X = features
 
 # ---- Define label
@@ -73,6 +74,16 @@ y_binned = pd.qcut(y, q=4, labels=False)
 
 # ---- split data
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y_binned)
+
+#%% Giving weights to the samples to lower outlier impact (added after review)
+train_bins = pd.qcut(y_train, q=10, labels=False, duplicates="drop")
+
+# Calculate inverse-frequency weights
+bin_counts = train_bins.value_counts()
+weights = train_bins.map(lambda b: len(train_bins) / bin_counts[b]).values
+
+# Normalize weights
+weights = weights / np.mean(weights)
 
 # ---- Target-Encoding
 # divide into numerical and categorical values; done separately for training and test set
@@ -136,29 +147,31 @@ plt.show()
 print("\n Linear Regression:")
 linear = LinearRegression()
 
-linear.fit(X_train_scaled, y_train)
+linear.fit(X_train_scaled, y_train, sample_weight=weights)
 y_pred = linear.predict(X_test_scaled)
 
 # ---- evaluate model
 train_R2 = linear.score(X_train_scaled, y_train)
 test_R2 = linear.score(X_test_scaled, y_test)
 mae =  mean_absolute_error(np.expm1(y_test), np.expm1(y_pred))
+rmse = root_mean_squared_error(np.expm1(y_test), np.expm1(y_pred))
 
-print("R2 train: ", round(train_R2, 2), " & R2 test: ", round(test_R2, 2), "& MAE:",  round(mae, 1))
+print("R2 train: ", round(train_R2, 2), " & R2 test: ", round(test_R2, 2), "& MAE:",  round(mae, 1), "& RMSE:",  round(rmse, 1))
 
 # %%% Elastic net
 print("\n Elastic Net:")
 elan = ElasticNet(alpha=0.04, l1_ratio=0.05)
 
-elan.fit(X_train_scaled, y_train)
+elan.fit(X_train_scaled, y_train, sample_weight=weights)
 y_pred = elan.predict(X_test_scaled)
 
 # ---- evaluate model
 train_R2 = elan.score(X_train_scaled, y_train)
 test_R2 = elan.score(X_test_scaled, y_test)
 mae =  mean_absolute_error(np.expm1(y_test), np.expm1(y_pred))
+rmse = root_mean_squared_error(np.expm1(y_test), np.expm1(y_pred))
 
-print("R2 train: ", round(train_R2, 2), " & R2 test: ", round(test_R2, 2), "& MAE:",  round(mae, 1))
+print("R2 train: ", round(train_R2, 2), " & R2 test: ", round(test_R2, 2), "& MAE:",  round(mae, 1), "& RMSE:",  round(rmse, 1))
 
 # %%% kNN with PCA beforehead
 print("\n PCA + kNN:") 
@@ -176,22 +189,24 @@ y_pred = knn_pca.predict(X_test_pca)
 train_R2 = knn_pca.score(X_train_pca, y_train)
 test_R2 = knn_pca.score(X_test_pca, y_test)
 mae =  mean_absolute_error(np.expm1(y_test), np.expm1(y_pred))
+rmse = root_mean_squared_error(np.expm1(y_test), np.expm1(y_pred))
 
-print("R2 train: ", round(train_R2, 2), " & R2 test: ", round(test_R2, 2), "& MAE:",  round(mae, 1))
+print("R2 train: ", round(train_R2, 2), " & R2 test: ", round(test_R2, 2), "& MAE:",  round(mae, 1), "& RMSE:",  round(rmse, 1))
 
 # %%% Random Forest
 print("\n Random Forest: ") 
 
 random_forest = RandomForestRegressor(n_estimators=225, max_depth=12, random_state=42)
-random_forest.fit(X_train_scaled, y_train)
+random_forest.fit(X_train_scaled, y_train, sample_weight=weights)
 y_pred = random_forest.predict(X_test_scaled)
 
 # ---- evaluate model
 train_R2 = random_forest.score(X_train_scaled, y_train)
 test_R2 = random_forest.score(X_test_scaled, y_test)
 mae =  mean_absolute_error(np.expm1(y_test), np.expm1(y_pred))
+rmse = root_mean_squared_error(np.expm1(y_test), np.expm1(y_pred))
 
-print("R2 train: ", round(train_R2, 2), " & R2 test: ", round(test_R2, 2), "& MAE:",  round(mae, 1))
+print("R2 train: ", round(train_R2, 2), " & R2 test: ", round(test_R2, 2), "& MAE:",  round(mae, 1), "& RMSE:",  round(rmse, 1))
 
 # %%%% Tree Explainer
 importances_rf = random_forest.feature_importances_
@@ -208,93 +223,30 @@ plt.show()
 # %%% Gradient Boosting
 print("\n Gradient Boosting: ")
 gradient_boost = se.GradientBoostingRegressor(n_estimators=325, max_depth=5, min_samples_leaf=5, learning_rate=0.088, random_state=42)
-gradient_boost.fit(X_train_scaled, y_train)
+gradient_boost.fit(X_train_scaled, y_train, sample_weight=weights)
 y_pred = gradient_boost.predict(X_test_scaled)
 
 # ---- evaluate model
 train_R2 = gradient_boost.score(X_train_scaled, y_train)
 test_R2 = gradient_boost.score(X_test_scaled, y_test)
 mae =  mean_absolute_error(np.expm1(y_test), np.expm1(y_pred))
+rmse = root_mean_squared_error(np.expm1(y_test), np.expm1(y_pred))
 
-print("R2 train: ", round(train_R2, 2), " & R2 test: ", round(test_R2, 2), "& MAE:",  round(mae, 1))
-
-#%% predict unknown, new membranes
-m1 = ["Dead-end", 4, 2000,  20, "[\"TFC\"]",
-    "[\"Polydimethylsiloxane\"]", None, "[\"Polyacrylonitrile\"]", "ISA", "[\"None\"]",
-    "[\"Crosslinking\",\"Drying\"]","[\"Dimethylformamide (DMF)\"]", "Dipcoating", 101,
-    34.2,  0.543]
-    # 1xradiation crosslinked PDMS on PAN, measured Perm = 0.07 LMH/bar
-
-m2 = ["Dead-end", 4, 2000, 20, "[\"TFC\"]",
-    "[\"Polydimethylsiloxane\"]", None, "[\"Polyacrylonitrile\"]", "Commercial", "[\"None\"]",
-    "[\"Crosslinking\"]","[]", None, 101,
-    35.7,  0.543] # Puramem Flux, measured Perm = 0.47 LMH/bar
-
-m3 = ["Dead-end", 4, 2000, 20, "[\"TFC\"]",
-    "[\"Polymers of intrinsic microporosity\"]", None, "[\"Polyacrylonitrile\"]", "ISA", "[\"None\"]",
-    "[\"Crosslinking\",\"Drying\"]","[Dimethylformamide (DMF)]", "Dipcoating", 96,
-    55.5, 0.543] # PIM A 5% crosslinked, measured Perm = 0.625 LMH/bar
-
-m4 = ["Dead-end", 4, 2000, 20, "[\"TFC\"]",
-    "[\"Polymers of intrinsic microporosity\"]", None, "[\"Polyacrylonitrile\"]", "ISA", "[\"None\"]",
-    "[\"Crosslinking\",\"Drying\"]","[Dimethylformamide (DMF)]", "Dipcoating", 79,
-    50.5, 0.543] # PIM B 1% crosslinked, measured Perm = 0.51 LMH/bar
-
-m5 = ["Dead-end", 4, 2000, 20, "[\"TFC\"]",
-    "[\"Polyamine\"]", None, "[\"Polyetherimide\"]", "ISA", "[\"None\"]",
-    "[\"Crosslinking\",\"Drying\"]","[Dimethylformamide (DMF)]", "Dipcoating", 79,
-    20, 0.543] # PEBAX, measured Perm = 0.75 LMH/bar
-
-mem_names = ["Hereon PDMS", "Puramem", "Hereon PIM", "Hereon PEBAX"]
-m_true = [0.07, 0.47, 0.51, 0.75]
-
-hereon_1 = pd.DataFrame([m1, m2, m4, m5], columns=X_test.columns, index=mem_names)
-hereon_cat = hereon_1[categorical_cols]
-hereon_encoded_cat = encoder.transform(hereon_cat)
-
-#%%
-hereon_encoded = pd.concat([pd.DataFrame(hereon_encoded_cat, index=mem_names,
-                                    columns = X_test_categorical.columns), 
-                       hereon_1[numerical_cols]], axis=1)
-
-hereon_scaled = robust.transform(hereon_encoded)
-# %%
-m_pred = gradient_boost.predict(hereon_scaled)
-m_pred_t = np.expm1(m_pred.reshape(1, -1))
-m_pred_t =m_pred_t[0].tolist()
-
-print(mem_names, m_pred_t)
-
-# %% Check similarity
-# Vector mean of training data and test data
-mean_vec = np.mean(X_train_scaled, axis=0)
-mean_vec_test = np.mean(X_test_scaled, axis=0)
-
-# calculate euclidian distance and cosinus similarity of new data
-differences = pd.DataFrame(None, index=mem_names, columns=["euclidian distance","cosinus similarity"])
-for i,name in enumerate(mem_names):
-    avg_dist = np.mean(np.linalg.norm(np.array(X_train_scaled) - hereon_scaled[[i]], axis=1))
-    differences["euclidian distance"][name] = avg_dist
-    cos_sim = cosine_similarity(hereon_scaled[[i]].reshape(1, -1), np.array(mean_vec).reshape(1, -1))[0, 0]
-    differences["cosinus similarity"][name] = cos_sim
-
-avg_dist = np.mean(np.linalg.norm(np.mean(X_train_scaled, axis=0) - np.mean(X_test_scaled, axis=0)))
-cos_sim = cosine_similarity(np.array(mean_vec_test).reshape(1, -1), np.array(mean_vec).reshape(1, -1))[0, 0]
-differences.loc["Test data set"] = [avg_dist, cos_sim]
-print(differences.astype(float).round(2))
+print("R2 train: ", round(train_R2, 2), " & R2 test: ", round(test_R2, 2), "& MAE:",  round(mae, 1), "& RMSE:",  round(rmse, 1))
 
 # %%%
 print("\n Extra Tree: ")
 extra_tree = se.ExtraTreesRegressor(n_estimators=175, max_depth=19, min_samples_leaf=3, random_state=42, n_jobs=-1)
-extra_tree.fit(X_train_scaled, y_train)
+extra_tree.fit(X_train_scaled, y_train, sample_weight=weights)
 y_pred = extra_tree.predict(X_test_scaled)
 
 # ---- evaluate model
 train_R2 = extra_tree.score(X_train_scaled, y_train)
 test_R2 = extra_tree.score(X_test_scaled, y_test)
 mae =  mean_absolute_error(np.expm1(y_test), np.expm1(y_pred))
+rmse = root_mean_squared_error(np.expm1(y_test), np.expm1(y_pred))
 
-print("R2 train: ", round(train_R2, 2), " & R2 test: ", round(test_R2, 2), "& MAE:",  round(mae, 1))
+print("R2 train: ", round(train_R2, 2), " & R2 test: ", round(test_R2, 2), "& MAE:",  round(mae, 1), "& RMSE:",  round(rmse, 1))
 
 # %%%% Tree Explainer
 # Feature Importance
@@ -316,10 +268,6 @@ plt.show()
 
 # %% XAI & feature analysis
 # ---- shap plot 
-random.seed(42)
-os.environ["PYTHONHASHSEED"] = "42"
-np.random.seed(42)
-
 explainer = shap.TreeExplainer(gradient_boost, X_train_scaled)
 runs = []
   
@@ -334,50 +282,49 @@ plt.show()
 
 # %%
 # SHAP-values for original names of categorical values
-
-def category_plot(X, shap_values, category_name:str):
-    shap_values_df = pd.DataFrame(shap_values, columns=X.columns)
-    X_with_cats = X.copy()
-    X_with_cats["shap_category"] = X_with_cats[category_name]
-    X_with_cats = X_with_cats.replace("[\"Polysulfone; Sulfonated poly(ether ether) ketone\"]", "[\"Polysulfone; Sulfonated PEEK\"]")
-    X_with_cats = X_with_cats.replace("[\"Pure solvent treatment\",\"Thermal treatment\", \"Crosslinking\"]",
-                                      "[\"Pure solvent t.\",\"Thermal t.\",\n\"Crosslinking\"]")
-    X_with_cats = X_with_cats.replace("[\"Gutter layer synthesis\",\"Thermal treatment\", \"Surface treatment\"]",
-                                      "[\"Gutter layer synthesis\",\n\"Thermal t.\",\"Surface t.\"]")
-    X_with_cats = X_with_cats.replace("[\"Crosslinking\",\"Gutter layer synthesis\"]","[\"Crosslinking\",\n\"Gutter layer synthesis\"]")
-    X_with_cats = X_with_cats.replace("[\"Pure solvent treatment\",\"Thermal treatment\",\"Crosslinking\"]",
-                                      "[\"Pure solvent treatment\",\n\"Thermal treatment\",\"Crosslinking\"]")
+# def category_plot(X, shap_values, category_name:str):
+#     shap_values_df = pd.DataFrame(shap_values, columns=X.columns)
+#     X_with_cats = X.copy()
+#     X_with_cats["shap_category"] = X_with_cats[category_name]
+#     X_with_cats = X_with_cats.replace("[\"Polysulfone; Sulfonated poly(ether ether) ketone\"]", "[\"Polysulfone; Sulfonated PEEK\"]")
+#     X_with_cats = X_with_cats.replace("[\"Pure solvent treatment\",\"Thermal treatment\", \"Crosslinking\"]",
+#                                       "[\"Pure solvent t.\",\"Thermal t.\",\n\"Crosslinking\"]")
+#     X_with_cats = X_with_cats.replace("[\"Gutter layer synthesis\",\"Thermal treatment\", \"Surface treatment\"]",
+#                                       "[\"Gutter layer synthesis\",\n\"Thermal t.\",\"Surface t.\"]")
+#     X_with_cats = X_with_cats.replace("[\"Crosslinking\",\"Gutter layer synthesis\"]","[\"Crosslinking\",\n\"Gutter layer synthesis\"]")
+#     X_with_cats = X_with_cats.replace("[\"Pure solvent treatment\",\"Thermal treatment\",\"Crosslinking\"]",
+#                                       "[\"Pure solvent treatment\",\n\"Thermal treatment\",\"Crosslinking\"]")
         
-    # mean of SHAP values per category
-    shap_cat_importance = shap_values_df.groupby(X_with_cats["shap_category"]).mean()
+#     # mean of SHAP values per category
+#     shap_cat_importance = shap_values_df.groupby(X_with_cats["shap_category"]).mean()
 
-    print(shap_cat_importance[category_name].sort_values())
-    colors = ['#1f77b4' if e >= 0 else '#ff0051' for e in shap_cat_importance[category_name].sort_values()]
+#     print(shap_cat_importance[category_name].sort_values())
+#     colors = ['#1f77b4' if e >= 0 else '#ff0051' for e in shap_cat_importance[category_name].sort_values()]
     
-    shap_cat_importance[category_name].sort_values().plot(kind="barh", color=colors)
-    plt.ylabel("")
-    plt.xlabel("SHAP value (impact on model output)")
-    plt.xlim(-0.5, 0.65)
-    plt.tight_layout()
-    plt.show()
+#     shap_cat_importance[category_name].sort_values().plot(kind="barh", color=colors)
+#     plt.ylabel("")
+#     plt.xlabel("SHAP value (impact on model output)")
+#     plt.xlim(-0.5, 0.65)
+#     plt.tight_layout()
+#     plt.show()
     
-# ----- structure
-category_plot(X_train, shap_values, "structure")
+# # ----- structure
+# category_plot(X_train, shap_values, "structure")
 
-# ---- Mode
-category_plot(X_train, shap_values, "testConditions.filtrationMode")
+# # ---- Mode
+# category_plot(X_train, shap_values, "testConditions.filtrationMode")
 
-# ---- chemistry 
-category_plot(X_train, shap_values, "chemistry")
+# # ---- chemistry 
+# category_plot(X_train, shap_values, "chemistry")
 
-# ---- support chemistry 
-category_plot(X_train, shap_values, "supportLayerChemistry")
+# # ---- support chemistry 
+# category_plot(X_train, shap_values, "supportLayerChemistry")
 
-# ---- post treatment 
-category_plot(X_train, shap_values, "postTreatment")
+# # ---- post treatment 
+# category_plot(X_train, shap_values, "postTreatment")
 
-# ---- supportLayer.post treatment 
-category_plot(X_train, shap_values, "supportLayer.postTreatment")
+# # ---- supportLayer.post treatment 
+# category_plot(X_train, shap_values, "supportLayer.postTreatment")
 
 # %%
 # ---- Permutation Importance
@@ -402,101 +349,5 @@ labels = ['\n'.join(textwrap.fill(part.strip(), 25) for part in re.split(r'\.\s*
 ax.set_xticklabels(labels, rotation=90)
 ax.set_ylabel("Decrease in R2 score")
 ax.figure.tight_layout()
-
-# %% CrossValidation
-# k-fold split and training
-y_true_all = []
-y_pred_all = []
-
-kf = KFold(n_splits=10, shuffle=True, random_state=42)
-
-for train_idx, test_idx in kf.split(X):
-    # Split
-    X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-    y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
-
-    # Divide columns
-    X_train_cat = X_train[categorical_cols]
-    X_train_num = X_train[numerical_cols]
-    X_test_cat = X_test[categorical_cols]
-    X_test_num = X_test[numerical_cols]
-
-    # Target-Encoding 
-    encoder = TargetEncoder()
-    X_train_cat_enc = encoder.fit_transform(X_train_cat, y_train)
-    X_test_cat_enc = encoder.transform(X_test_cat)
-
-    # combine categorical and numerical columns
-    X_train_new = pd.concat([pd.DataFrame(X_train_cat_enc,
-                                          index=X_train.index, columns=X_train_categorical.columns), X_train_num],
-                            axis=1)
-    X_test_new = pd.concat([pd.DataFrame(X_test_cat_enc,
-                                          index=X_test.index, columns=X_test_categorical.columns), X_test_num],
-                           axis=1)
-
-    # scale
-    scaler = RobustScaler()
-    X_train_scaled = scaler.fit_transform(X_train_new)
-    X_test_scaled = scaler.transform(X_test_new)
-    
-    y_train = np.log1p(y_train.array.astype(float))
-    y_test = np.log1p(y_test.array.astype(float))
-
-    # Modelltraining
-    gradient_boost.fit(X_train_scaled, y_train)
-
-    # Vorhersage
-    y_pred = gradient_boost.predict(X_test_scaled)
-
-    # Ergebnisse sammeln
-    y_true_all.extend(y_test)
-    y_pred_all.extend(y_pred)
-    
-y_true_all = np.expm1(y_true_all)
-y_pred_all = np.expm1(y_pred_all)
-
-# %%
-# ---- Plot
-# plt.figure(figsize=(6, 6))
-plt.scatter(y_true_all, y_pred_all, alpha=0.3)
-plt.plot([min(y_true_all), max(y_true_all)],
-         [min(y_true_all), max(y_true_all)],
-         color='red', linestyle='--', label='Ideal')
-for i in range(len(mem_names)):
-    plt.text(m_true[i], m_pred_t[i], mem_names[i], color="black",
-            fontsize=9, horizontalalignment='right',
-            bbox=dict(alpha=0.4, facecolor="white", edgecolor="white", boxstyle='round,pad=-1'))
-plt.scatter(m_true, m_pred_t, color="red", alpha=0.6)
-plt.xlabel("Measured Permeance [LHM/bar]")
-plt.ylabel("Predicted Permeance [LHM/bar]")
-plt.xscale("log")
-plt.yscale("log")
-plt.title("10-fold Cross-Validation: Prediction vs. Truth")
-plt.legend()
-plt.tight_layout()
-plt.show()
-
-# %% Residual-Analysis incl. plot
-residuals = list(map(lambda true, pred: true - pred, y_true_all, y_pred_all))
-mae = mean_absolute_error(y_true_all, y_pred_all)
-std = np.std(residuals)
-
-plt.figure(figsize=(7, 5))
-plt.scatter(y_pred_all, residuals, alpha=0.3)
-plt.axhline(0, color='red', linestyle='--')
-plt.axhline(mae, color='grey', linestyle='--', label = "Mean absolute error (true-pred)")
-plt.axhline(-mae, color='grey', linestyle='--')
-plt.axhline(std, color='lightgrey', linestyle='--', label = "Standard deviation residuals")
-plt.axhline(-std, color='lightgrey', linestyle='--')
-plt.xlabel("Predicted values [LMH/bar]")
-plt.ylabel("Residues [LMH/bar]")
-plt.legend()
-plt.ylim(-max(y), max(y))
-plt.tight_layout()
-plt.show()
-
-y_true, y_pred = np.array(y_true_all), np.array(y_pred_all)
-mape = np.mean(np.abs((y_true[y_true != 0] - y_pred[y_true != 0]) / y_true[y_true != 0])) * 100
-print(f"MAPE: {mape:.2f}%", f"STD: {std:.1f} LMH/bar", f"MAE: {mae:.1f} LMH/bar")
 
 # %%

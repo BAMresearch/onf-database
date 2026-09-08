@@ -2,7 +2,7 @@
 
 ## General
 
-This repository belongs to the the publication "Revealing structure-property-performance relationships of organic solvent nanofiltration membranes using a FAIR, open-access database" published in ADD JOURNAL (DOI). 
+This repository belongs to the the publication "Revealing structure-property-performance relationships of organic solvent nanofiltration membranes using a FAIR, open-access database" published in the Journalof Membrane Science (DOI: 10.1016/j.memsci.2026.126088). 
 
 ## Dataset 
 
